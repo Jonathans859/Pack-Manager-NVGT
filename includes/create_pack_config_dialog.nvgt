@@ -1,0 +1,46 @@
+void create_new_pack_config_dialog() {
+	form.create_window("Create new pack configuration",false);
+	int cn=form.create_input_box("Name of pack configuration");
+	int pn=form.create_input_box("Pack&name");
+	int browse_name=form.create_button("Browse");
+	int dir=form.create_input_box("&Directory");
+	int browse_dir=form.create_button("Browse");
+	int exclude_dirs=form.create_input_box("&Excluded paths - seperate with line break","","",0,false,true,false);
+	int create=form.create_button("&Create",true);
+	int cancel=form.create_button("Cance&l",false,true);
+	form.focus(cn);
+	while(true) {
+		form.monitor();
+		wait(5);
+		if(form.is_pressed(cancel)) {
+			form.reset();
+			main_dialog();
+			break;
+		}
+		if(form.is_pressed(browse_name)) {
+			form.set_text(pn,save_file_dialog("all files:*").replace("\\","/"));
+			form.focus(pn);
+		}
+		if(form.is_pressed(browse_dir)) {
+			form.set_text(dir,select_folder_dialog("all files:*").replace("\\","/"));
+			form.focus(dir);
+		}
+		if(form.is_pressed(create)) {
+			string configname=form.get_text(cn);
+			string packname=form.get_text(pn);
+			string directory=form.get_text(dir);
+			string exclude_directories=form.get_text(exclude_dirs);
+			bool filled_out=(!configname.is_empty() and !packname.is_empty() and !directory.is_empty());
+			if(!filled_out) speak("Fill out all fealds first.");
+			else {
+				bool  created=create_pack_config(configname,packname,directory,exclude_directories);
+				if(created) {
+					form.reset();
+					main_dialog();
+					break;
+				}
+				else speak("Error saving data. Line: "+config.get_error_line()+", "+config.get_error_text());
+			}
+		}
+	}
+}

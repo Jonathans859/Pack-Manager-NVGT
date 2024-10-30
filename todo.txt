@@ -1,0 +1,2 @@
+Command line interface
+Consider creating sqllite packs as well

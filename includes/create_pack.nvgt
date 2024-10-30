@@ -1,0 +1,12 @@
+void create_pack(string name) {
+	resource_packer packer(config.get_string(name,"name"),config.get_string(name,"bass_dir"));
+	string[] excludes=config.get_string(name,"exclude_directories","").split("\r\n");
+	for(uint i=0; i<excludes.length(); i++) {
+		packer.add_exclude(excludes[i],directory_exists(packer.bass_directory+"/"+excludes[i]));
+	}
+	packer.get_file_list();
+	speak("Creating resource file, please wait");
+	bool create = packer.create_resource_file();
+	if(create) speak("Package created, "+packer.errors.length()+" errors.");
+	else if(!create or packer.errors.length()>0) info_box("Unable to create package","Error information",join(packer.errors, ".\0r\n"),MESSAGE_BOX_INFORMATION);
+}
