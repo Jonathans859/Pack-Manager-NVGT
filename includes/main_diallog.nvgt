@@ -1,6 +1,6 @@
 void main_dialog() {
 	form.create_window("Pack Creator - Select an option",false,true);
-	int packs_list=form.create_list("&Pack configurations",0,true);
+	int packs_list=form.create_list("&Pack configurations");
 	string[] pack_configs=config.list_sections();
 	for(uint i=0; i<pack_configs.length(); i++) { form.add_list_item(packs_list,pack_configs[i]); }
 	int create_pack_button=form.create_button("&Create Pack",true);
