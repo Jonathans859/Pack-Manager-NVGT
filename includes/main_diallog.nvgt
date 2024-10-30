@@ -13,6 +13,9 @@ void main_dialog() {
 	while(true) {
 		form.monitor();
 		wait(5);
+		if(form.get_list_count(packs_list)>0 and key_pressed(KEY_DELETE)) {
+			if(config.delete_section(form.get_list_item(packs_list,form.get_list_position(packs_list)))) form.delete_list_item(packs_list,form.get_list_position(packs_list));
+		}
 		if(form.is_pressed(exit_button)) exit();
 		if(form.is_pressed(create_pack_button)) create_pack(form.get_list_item(packs_list,form.get_list_position(packs_list)));
 		if(form.is_pressed(new_pack)) {
