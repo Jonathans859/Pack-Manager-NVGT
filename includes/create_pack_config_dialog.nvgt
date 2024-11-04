@@ -1,7 +1,7 @@
 void create_new_pack_config_dialog() {
 	form.create_window("Create new pack configuration",false);
 	int cn=form.create_input_box("Name of pack configuration");
-	int pn=form.create_input_box("Pack&name");
+	int pn=form.create_input_box("Pack &location");
 	int browse_name=form.create_button("Browse");
 	int dir=form.create_input_box("&Directory");
 	int browse_dir=form.create_button("Browse");
