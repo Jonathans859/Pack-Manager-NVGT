@@ -5,6 +5,7 @@ string[] file_list;
 string[] excludes; //list of files that will be excluded from the pack.
 string[] exclude_dirs;
 string[] errors;
+string pack_ident;
 resource_packer(string&in packname, string&in bass_dir) {
 this.packname = packname;
 this.bass_directory = bass_dir;
@@ -16,6 +17,12 @@ else if(this.exclude_dirs.find(e)<0) this.exclude_dirs.insert_last(e);
 private void error(string&in error) {
 this.errors.insert_last(error);
 }
+string get_pack_id() property {
+return this.pack_ident;
+}
+void set_pack_id(string id) {
+this.pack_ident = id;
+}
 bool create_resource_file(pack@&out p = void) {
 this.errors.resize(0);
 if(this.file_list.length()<=0) {
@@ -23,6 +30,7 @@ this.error("bass directory empty");
 return false;
 }
 pack temp;
+if(!this.pack_ident.empty()) temp.set_pack_identifier(this.pack_ident);
 if(!temp.open(this.packname, PACK_OPEN_MODE_CREATE)) {
 this.error("Unable to open pack for writing");
 return false;
@@ -34,14 +42,15 @@ if(!temp.add_file(filepath, this.file_list[i], true)) {
 this.error("Unable to add file "+(i+1)+" of "+this.file_list.length()+". "+filepath);
 }
 else count += 1;
+refresh_window();
 }
 temp.close();
 @p = temp;
 return count>0;
 }
-int get_file_list(bool search_recursive = true) {
+int get_file_list() {
 if(this.bass_directory.empty() or !directory_exists(this.bass_directory)) return 0;
-this.file_list = list_files(this.bass_directory, search_recursive, this.exclude_dirs);
+this.file_list = list_files(this.bass_directory, true, this.exclude_dirs);
 if(this.excludes.length()>0) {
 for(uint i = 0; i<this.excludes.length(); i+=1) {
 for(uint j = 0; j<this.file_list.length(); j+=1) {
