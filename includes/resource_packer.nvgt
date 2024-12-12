@@ -6,6 +6,7 @@ string[] excludes; //list of files that will be excluded from the pack.
 string[] exclude_dirs;
 string[] errors;
 string pack_ident;
+pack@internalpack;
 resource_packer(string&in packname, string&in bass_dir) {
 this.packname = packname;
 this.bass_directory = bass_dir;
@@ -20,11 +21,22 @@ this.errors.insert_last(error);
 string get_pack_id() property {
 return this.pack_ident;
 }
-void set_pack_id(string id) {
+void set_pack_id(string id) property {
 this.pack_ident = id;
 }
-bool create_resource_file(pack@&out p = void) {
+int get_total_file_count() property {
+return this.file_list.length();
+}
+int get_remaining_file_count() property {
+if(!this.is_packing) return 0;
+return (this.internalpack.list_files().length()-this.total_file_count);
+}
+double get_percentage() property {
+return (this.remaining_file_count*this.total_file_count)/100;
+}
+bool begin_pack_create(pack@&out p = void) {
 this.errors.resize(0);
+this.index_files();
 if(this.file_list.length()<=0) {
 this.error("bass directory empty");
 return false;
@@ -36,19 +48,14 @@ this.error("Unable to open pack for writing");
 return false;
 }
 int count = 0;
-for(uint i = 0; i<this.file_list.length(); i+=1) {
-string filepath = this.bass_directory+"/"+this.file_list[i];
-if(!temp.add_file(filepath, this.file_list[i], true)) {
-this.error("Unable to add file "+(i+1)+" of "+this.file_list.length()+". "+filepath);
-}
-else count += 1;
-refresh_window();
-}
-temp.close();
+@this.internalpack = temp;
 @p = temp;
-return count>0;
+return true;
 }
-int get_file_list() {
+bool get_is_packing() property {
+return this.file_list.length()>0;
+}
+private int index_files() {
 if(this.bass_directory.empty() or !directory_exists(this.bass_directory)) return 0;
 this.file_list = list_files(this.bass_directory, true, this.exclude_dirs);
 if(this.excludes.length()>0) {
@@ -62,6 +69,17 @@ continue;
 }
 }
 return this.file_list.length();
+}
+bool monitor() {
+//call this in each iteration of your loop to update the pack. Will return true if files are still packing, false otherwise.
+if(!this.is_packing) return false;
+int i = 0;
+string filepath = this.bass_directory+"/"+this.file_list[i];
+if(!this.internalpack.add_file(filepath, this.file_list[i], true)) {
+this.error("Unable to add file "+(i+1)+" of "+this.file_list.length()+". "+filepath);
+}
+this.file_list.remove_at(i);
+return this.file_list.length()<=0;
 }
 }
 string[] list_files(string path, bool recursive = true, string[] excluding_dirs = {}) {

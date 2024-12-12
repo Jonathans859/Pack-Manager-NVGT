@@ -1,7 +1,8 @@
-bool create_pack_config(string&in configname,string&in packname, string&in bass_dir,string&in excludes) {
+bool create_pack_config(string&in configname,string&in packname, string&in bass_dir,string&in excludes,string&in id) {
 	config.create_section(configname);
 	config.set_string(configname,"name",packname);
 	config.set_string(configname,"bass_dir",bass_dir);
 	config.set_string(configname,"excludes",excludes);
+	config.set_string(configname,"id",id);
 	return config.save("packs.config");
 }

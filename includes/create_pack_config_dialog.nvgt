@@ -6,6 +6,7 @@ void create_new_pack_config_dialog() {
 	int dir=form.create_input_box("&Directory");
 	int browse_dir=form.create_button("Browse");
 	int exclude_dirs=form.create_input_box("&Excluded paths - seperate with line break","","",0,false,true,false);
+	int pack_id=form.create_input_box("Pack &identifier","","",8,false);
 	int create=form.create_button("&Create",true);
 	int cancel=form.create_button("Cance&l",false,true);
 	form.focus(cn);
@@ -33,7 +34,7 @@ void create_new_pack_config_dialog() {
 			bool filled_out=(!configname.is_empty() and !packname.is_empty() and !directory.is_empty());
 			if(!filled_out) speak("Fill out all fealds first.");
 			else {
-				bool  created=create_pack_config(configname,packname,directory,exclude_directories);
+				bool  created=create_pack_config(configname,packname,directory,exclude_directories,form.get_text(pack_id));
 				if(created) {
 					form.reset();
 					main_dialog();

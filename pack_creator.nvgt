@@ -11,6 +11,9 @@ audio_form form;
 ini config;
 
 void main() {
+	if(!COMMAND_LINE.is_empty()) {
+		create_pack(COMMAND_LINE);
+	}
 	show_window("Pack Creator");
 	wait(50); //give the sr time to speak the window title.
 	config.load("packs.config");
