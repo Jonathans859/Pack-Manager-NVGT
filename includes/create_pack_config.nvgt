@@ -1,8 +1,44 @@
-bool create_pack_config(string&in configname,string&in packname, string&in bass_dir,string&in excludes,string&in id) {
-	config.create_section(configname);
-	config.set_string(configname,"name",packname);
-	config.set_string(configname,"bass_dir",bass_dir);
-	config.set_string(configname,"excludes",excludes);
-	config.set_string(configname,"id",id);
-	return config.save("packs.config");
+void create_new_config_dialog() {
+	form.create_window("Create new pack configuration",false);
+	int name=form.create_input_box("Configuration name");
+	int path=form.create_input_box("&Path");
+	int browse_path=form.create_button("Browse");
+	int directory=form.create_input_box("&Directory");
+	int browse_directory=form.create_button("Browse");
+	int key=form.create_input_box("Key");
+	int create=form.create_button("&Create",true);
+	int cancel=form.create_button("Cance&l",cancel:true);
+	form.focus(name);
+	while(true) {
+		form.monitor();
+		wait(5);
+		if(form.is_pressed(cancel)) {
+			form.reset();
+			main_dialog();
+			break;
+		}
+		if(form.is_pressed(browse_path)) {
+			form.set_text(path,save_file_dialog("all files:*").replace("\\","/"));
+			form.focus(path);
+		}
+		if(form.is_pressed(browse_directory)) {
+			form.set_text(directory,select_folder_dialog("all files:*").replace("\\","/"));
+			form.focus(directory);
+		}
+		if(form.is_pressed(create)) {
+			string config_name=form.get_text(name);
+			if(
+				config.create_section(config_name)
+				and config.set_string(config_name,"path",form.get_text(path))
+				and config.set_string(config_name,"directory",form.get_text(directory))
+				and config.set_string(config_name,"key",form.get_text(key))
+				and config.save("packs.config")
+			) {
+				form.reset();
+				main_dialog();
+				break;
+			}
+			else speak("Error saving data. Line: "+config.get_error_line()+", "+config.get_error_text());
+		}
+	}
 }

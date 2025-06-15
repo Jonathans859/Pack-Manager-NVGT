@@ -1,0 +1,15 @@
+#include"includes/*.nvgt"
+#include"form.nvgt"
+#include"size.nvgt"
+#include"token_gen.nvgt"
+#include"speech.nvgt"
+#include"ini.nvgt"
+
+audio_form form;
+ini config;
+
+void main() {
+	show_window("Pack Manager");
+	if(!config.load("packs.config",true)) alert("Error loading packs.config","Line: "+config.get_error_line()+". Text: "+config.get_error_text());
+	main_dialog();
+}

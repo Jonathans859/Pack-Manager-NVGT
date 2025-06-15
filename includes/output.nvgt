@@ -1,4 +1,0 @@
-void output(string text) {
-	if(is_console_available()) print(text);
-	else speak(text);
-	}

@@ -1,0 +1,43 @@
+enum pack_actions {
+	create=0,
+	extract
+}
+void execute_configuration(const string&in name,pack_actions action,bool sounds) {
+	pack_file p;
+	string path=config.get_string(name,"path");
+	string dir=config.get_string(name,"directory");
+	if(action==create) {
+		p.create(path,config.get_string(name,"key"));
+		string[] items;
+		find_stuff(dir,@items);
+		sound @prg;
+		if(sounds) {
+			tone_synth ts;
+			ts.set_waveform_type(2);
+			ts.set_volume(0.5);
+			ts.set_edge_fades(3,15); 
+			ts.freq_ms(300,15);
+			@prg=ts.write_wave_sound();
+		}
+		for(uint i=0; i<items.length(); i++) {
+			p.add_file(items[i],items[i].replace(dir+"/",""));
+			//speak("Added "+items[i].replace(dir+"/",""));
+			if(sounds) prg.play();
+		}
+	}
+	p.close();
+	alert("Done","Done");
+}
+
+void find_stuff(const string&in path,string[]@items) {
+	string[]@ folders=find_directories(path+"/*");
+	string[]@ files=find_files(path+"/*.*");
+	for (uint i = 0; i < files.length(); i++) {
+		items.insert_last(path+"/"+files[i]);
+	}
+	if(folders.length() > 0) {
+		for (uint i = 0; i < folders.length(); i++) {
+			find_stuff(path+"/"+folders[i],items);
+		}
+	}
+}

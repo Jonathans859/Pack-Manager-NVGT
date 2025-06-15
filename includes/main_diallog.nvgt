@@ -1,29 +1,37 @@
 void main_dialog() {
-	form.create_window("Pack Creator - Select an option",false,true);
-	int packs_list=form.create_list("&Pack configurations");
+	form.create_window("Main",false);
+	int packs=form.create_list("&Pack configurations");
+	int actions=form.create_list("&Actions");
+	form.add_list_item(actions,"Create/repack pack");
+	form.add_list_item(actions,"Extract pack");
 	string[] pack_configs=config.list_sections();
-	for(uint i=0; i<pack_configs.length(); i++) { form.add_list_item(packs_list,pack_configs[i]); }
-	int create_pack_button=form.create_button("&Create Pack",true);
-	int new_pack=form.create_button("Create &new pack configuration");
-	int exit_button=form.create_button("E&xit",false,true);
-	form.focus(packs_list);
-	if(form.get_list_count(packs_list)<1) {
-		form.set_state(create_pack_button,false,true);
-	}
+	for(uint i=0; i<pack_configs.length(); i++) { form.add_list_item(packs,pack_configs[i]); }
+	uint execute=form.create_button("&Execute",true);
+	int sounds=form.create_checkbox("&Play sounds",config.get_bool("","sounds",true));
+	int new=form.create_button("Create &new pack configuration");
+	int close=form.create_button("E&xit",false,true);
+	form.focus(packs);
 	while(true) {
 		form.monitor();
 		wait(5);
-		if(form.get_list_count(packs_list)>0 and key_pressed(KEY_DELETE)) {
-			if(config.delete_section(form.get_list_item(packs_list,form.get_list_position(packs_list)))) {
-				form.delete_list_item(packs_list,form.get_list_position(packs_list));
+		if(form.get_list_count(packs)>0 and key_pressed(KEY_DELETE)) {
+			if(config.delete_section(form.get_list_item(packs,form.get_list_position(packs)))) {
+				form.delete_list_item(packs,form.get_list_position(packs));
 				config.save("packs.config");
 			}
 		}
-		if(form.is_pressed(exit_button)) exit();
-		if(form.is_pressed(create_pack_button)) create_pack(form.get_list_item(packs_list,form.get_list_position(packs_list)));
-		if(form.is_pressed(new_pack)) {
+		if(form.is_pressed(close)) {
+			config.set_bool("","sounds",form.is_checked(sounds));
+			config.save("packs.config");
+			exit();
+		}
+		if(form.is_pressed(execute)) {
+			if(form.get_list_count(packs)<1) speak("No configuration");
+			else execute_configuration(form.get_list_item(packs,form.get_list_position(packs)),pack_actions(form.get_list_position(actions)),form.is_checked(sounds));
+		}
+		if(form.is_pressed(new)) {
 			form.reset();
-			create_new_pack_config_dialog();
+			create_new_config_dialog();
 			break;
 		}
 	}

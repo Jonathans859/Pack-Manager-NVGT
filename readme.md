@@ -1,8 +1,2 @@
-# Pack Creator for NVGT
-This is a pack creator utility for the [Nonvisual Gaming Toolkit](https://nvgt.gg)
-
-# Usage
-Simply run the "pack_creator.nvgt" script and use the easy-to-understand UI.
-
-# Contribution credits
-Thanks to [Ivan Soto](https://github.com/ivansoto0) for developing the resource_packer include.
+# Pack Manager for NVGT
+An utility for the [Nonvisual Gaming Toolkit](https://nvgt.gg) to create and extract pack files of your NVGT applications using the pack_file class (sqlite_pack planned).
