@@ -19,10 +19,16 @@ void execute_configuration(const string&in name,pack_actions action,bool sounds)
 			ts.freq_ms(300,15);
 			@prg=ts.write_wave_sound();
 		}
+		int tsounds,tloops;
+		tsounds = round(tinyexpr(items.length()+" / 100"),0);
 		for(uint i=0; i<items.length(); i++) {
 			p.add_file(items[i],items[i].replace(dir+"/",""));
 			//speak("Added "+items[i].replace(dir+"/",""));
-			if(sounds) prg.play();
+			if(sounds&&tloops==tsounds) {
+				prg.play();
+				tloops=0;
+			}
+			tloops++;
 		}
 	}
 	p.close();
