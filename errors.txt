@@ -1,0 +1,1 @@
+Open file error  dialog  Invalid dialog file filters: Invalid character in pattern (Only [a-zA-Z0-9_.-] allowed, or a single *)

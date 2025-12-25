@@ -1,44 +1,187 @@
 void create_new_config_dialog() {
-	form.create_window("Create new pack configuration",false);
-	int name=form.create_input_box("Configuration name");
-	int path=form.create_input_box("&Path");
-	int browse_path=form.create_button("Browse");
-	int directory=form.create_input_box("&Directory");
-	int browse_directory=form.create_button("Browse");
-	int key=form.create_input_box("Key");
-	int create=form.create_button("&Create",true);
-	int cancel=form.create_button("Cance&l",cancel:true);
+	form.create_window("Create new pack configuration", false);
+	int name = form.create_input_box("Configuration &name");
+	int type_list = form.create_list("Pack &type");
+	form.add_list_item(type_list, "Standard (pack_file) - Read-only after creation");
+	form.add_list_item(type_list, "SQLite (sqlite_pack) - Supports delete, rename, rekey");
+	int path = form.create_input_box("&Path (Location of the pack file)");
+	int browse_path = form.create_button("Browse path");
+	int directory = form.create_input_box("&Directory (Folder containing the content)");
+	int browse_directory = form.create_button("Browse directory");
+	int key = form.create_input_box("Encryption &key");
+	int generate_key = form.create_button("&Generate random key");
+	int create = form.create_button("&Create", true);
+	int cancel = form.create_button("Cance&l", cancel: true);
 	form.focus(name);
+
 	while(true) {
 		form.monitor();
 		wait(5);
+
 		if(form.is_pressed(cancel)) {
 			form.reset();
 			main_dialog();
 			break;
 		}
+
 		if(form.is_pressed(browse_path)) {
-			form.set_text(path,save_file_dialog("all files:*").replace("\\","/"));
-			form.focus(path);
+			string selected = save_file_dialog("*");
+			if(selected.length() > 0) {
+				form.set_text(path, selected.replace("\\", "/"));
+				form.focus(path);
+			}
 		}
+
 		if(form.is_pressed(browse_directory)) {
-			form.set_text(directory,select_folder_dialog("all files:*").replace("\\","/"));
-			form.focus(directory);
+			string selected = select_folder_dialog();
+			if(selected.length() > 0) {
+				form.set_text(directory, selected.replace("\\", "/"));
+				form.focus(directory);
+			}
 		}
+
+		if(form.is_pressed(generate_key)) {
+			string new_key = generate_token(20, TOKEN_CHARACTERS | TOKEN_NUMBERS | TOKEN_SYMBOLS);
+			form.set_text(key, new_key);
+			speak("Generated key: " + new_key);
+			form.focus(key);
+		}
+
 		if(form.is_pressed(create)) {
-			string config_name=form.get_text(name);
+			string config_name = form.get_text(name);
+			string config_path = form.get_text(path);
+			string config_dir = form.get_text(directory);
+			string config_key = form.get_text(key);
+			string config_type = form.get_list_position(type_list) == 1 ? "sqlite" : "standard";
+
+			// Validation
+			if(config_name.length() == 0) {
+				speak("Please enter a configuration name");
+				form.focus(name);
+				continue;
+			}
+			if(config_path.length() == 0) {
+				speak("Please enter a pack file path");
+				form.focus(path);
+				continue;
+			}
+			if(config_dir.length() == 0) {
+				speak("Please enter a content directory");
+				form.focus(directory);
+				continue;
+			}
+
 			if(
 				config.create_section(config_name)
-				and config.set_string(config_name,"path",form.get_text(path))
-				and config.set_string(config_name,"directory",form.get_text(directory))
-				and config.set_string(config_name,"key",form.get_text(key))
+				and config.set_string(config_name, "path", config_path)
+				and config.set_string(config_name, "directory", config_dir)
+				and config.set_string(config_name, "key", config_key)
+				and config.set_string(config_name, "type", config_type)
 				and config.save("packs.config")
 			) {
 				form.reset();
 				main_dialog();
 				break;
 			}
-			else speak("Error saving data. Line: "+config.get_error_line()+", "+config.get_error_text());
+			else {
+				speak("Error saving data. Line: " + config.get_error_line() + ", " + config.get_error_text());
+			}
+		}
+	}
+}
+
+void edit_config_dialog(const string&in config_name) {
+	form.create_window("Edit configuration: " + config_name, false);
+
+	// Load existing values
+	string existing_path = config.get_string(config_name, "path");
+	string existing_dir = config.get_string(config_name, "directory");
+	string existing_key = config.get_string(config_name, "key");
+	string existing_type = config.get_string(config_name, "type", "standard");
+
+	int type_list = form.create_list("Pack &type");
+	form.add_list_item(type_list, "Standard (pack_file) - Read-only after creation");
+	form.add_list_item(type_list, "SQLite (sqlite_pack) - Supports delete, rename, rekey");
+	if(existing_type == "sqlite") {
+		form.set_list_position(type_list, 1);
+	}
+
+	int path = form.create_input_box("&Path (Location of the pack file)", existing_path);
+	int browse_path = form.create_button("Browse path");
+	int directory = form.create_input_box("&Directory (Folder containing the content)", existing_dir);
+	int browse_directory = form.create_button("Browse directory");
+	int key = form.create_input_box("Encryption &key", existing_key);
+	int generate_key = form.create_button("&Generate random key");
+	int save = form.create_button("&Save", true);
+	int cancel = form.create_button("Cance&l", cancel: true);
+	form.focus(type_list);
+
+	while(true) {
+		form.monitor();
+		wait(5);
+
+		if(form.is_pressed(cancel)) {
+			form.reset();
+			main_dialog();
+			break;
+		}
+
+		if(form.is_pressed(browse_path)) {
+			string selected = save_file_dialog("*", existing_path);
+			if(selected.length() > 0) {
+				form.set_text(path, selected.replace("\\", "/"));
+				form.focus(path);
+			}
+		}
+
+		if(form.is_pressed(browse_directory)) {
+			string selected = select_folder_dialog(existing_dir);
+			if(selected.length() > 0) {
+				form.set_text(directory, selected.replace("\\", "/"));
+				form.focus(directory);
+			}
+		}
+
+		if(form.is_pressed(generate_key)) {
+			string new_key = generate_token(20, TOKEN_CHARACTERS | TOKEN_NUMBERS | TOKEN_SYMBOLS);
+			form.set_text(key, new_key);
+			speak("Generated key: " + new_key);
+			form.focus(key);
+		}
+
+		if(form.is_pressed(save)) {
+			string config_path = form.get_text(path);
+			string config_dir = form.get_text(directory);
+			string config_key = form.get_text(key);
+			string config_type = form.get_list_position(type_list) == 1 ? "sqlite" : "standard";
+
+			// Validation
+			if(config_path.length() == 0) {
+				speak("Please enter a pack file path");
+				form.focus(path);
+				continue;
+			}
+			if(config_dir.length() == 0) {
+				speak("Please enter a content directory");
+				form.focus(directory);
+				continue;
+			}
+
+			if(
+				config.set_string(config_name, "path", config_path)
+				and config.set_string(config_name, "directory", config_dir)
+				and config.set_string(config_name, "key", config_key)
+				and config.set_string(config_name, "type", config_type)
+				and config.save("packs.config")
+			) {
+				speak("Configuration saved");
+				form.reset();
+				main_dialog();
+				break;
+			}
+			else {
+				speak("Error saving data. Line: " + config.get_error_line() + ", " + config.get_error_text());
+			}
 		}
 	}
 }

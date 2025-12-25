@@ -1,3 +1,4 @@
+#pragma plugin nvgt_sqlite
 #include"includes/*.nvgt"
 #include"form.nvgt"
 #include"size.nvgt"

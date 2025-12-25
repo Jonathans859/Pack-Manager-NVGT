@@ -1,38 +1,84 @@
 void main_dialog() {
-	form.create_window("Main",false);
-	int packs=form.create_list("&Pack configurations");
-	int actions=form.create_list("&Actions");
-	form.add_list_item(actions,"Create/repack pack");
-	form.add_list_item(actions,"Extract pack");
-	string[] pack_configs=config.list_sections();
-	for(uint i=0; i<pack_configs.length(); i++) { form.add_list_item(packs,pack_configs[i]); }
-	uint execute=form.create_button("&Execute",true);
-	int sounds=form.create_checkbox("&Play sounds",config.get_bool("","sounds",true));
-	int new=form.create_button("Create &new pack configuration");
-	int close=form.create_button("E&xit",false,true);
+	form.create_window("Main", false);
+	int packs = form.create_list("&Pack configurations");
+	int actions = form.create_list("&Actions");
+	form.add_list_item(actions, "Create/repack pack");
+	form.add_list_item(actions, "Add files to pack");
+	form.add_list_item(actions, "Extract pack (all files)");
+	form.add_list_item(actions, "Extract pack (select files)");
+	form.add_list_item(actions, "View pack stats");
+	form.add_list_item(actions, "Delete files from pack (SQLite only)");
+	form.add_list_item(actions, "Rename files in pack (SQLite only)");
+	form.add_list_item(actions, "Change encryption key (SQLite only)");
+
+	string[] pack_configs = config.list_sections();
+	for(uint i = 0; i < pack_configs.length(); i++) {
+		string type_str = config.get_string(pack_configs[i], "type", "standard");
+		string type_label = type_str == "sqlite" ? " [SQLite]" : " [Standard]";
+		form.add_list_item(packs, pack_configs[i] + type_label);
+	}
+
+	uint execute = form.create_button("&Execute", true);
+	int sounds = form.create_checkbox("&Play sounds", config.get_bool("", "sounds", true));
+	int open_direct = form.create_button("&Open pack directly");
+	int new_config = form.create_button("Create &new pack configuration");
+	int edit_config = form.create_button("&Edit configuration");
+	int close = form.create_button("E&xit", false, true);
 	form.focus(packs);
+
 	while(true) {
 		form.monitor();
 		wait(5);
-		if(form.get_list_count(packs)>0 and key_pressed(KEY_DELETE)) {
-			if(config.delete_section(form.get_list_item(packs,form.get_list_position(packs)))) {
-				form.delete_list_item(packs,form.get_list_position(packs));
-				config.save("packs.config");
+
+		// Delete configuration with Delete key
+		if(form.get_list_count(packs) > 0 and key_pressed(KEY_DELETE)) {
+			int confirm = message_box("Confirm Delete", "Delete configuration '" + pack_configs[form.get_list_position(packs)] + "'?", {"Yes", "No"});
+			if(confirm == 1) {
+				if(config.delete_section(pack_configs[form.get_list_position(packs)])) {
+					form.delete_list_item(packs, form.get_list_position(packs));
+					pack_configs.remove_at(form.get_list_position(packs));
+					config.save("packs.config");
+				}
 			}
 		}
+
+		// Exit
 		if(form.is_pressed(close)) {
-			config.set_bool("","sounds",form.is_checked(sounds));
+			config.set_bool("", "sounds", form.is_checked(sounds));
 			config.save("packs.config");
 			exit();
 		}
+
+		// Execute selected action
 		if(form.is_pressed(execute)) {
-			if(form.get_list_count(packs)<1) speak("No configuration");
-			else execute_configuration(form.get_list_item(packs,form.get_list_position(packs)),pack_actions(form.get_list_position(actions)),form.is_checked(sounds));
+			if(form.get_list_count(packs) < 1) {
+				speak("No configuration selected. Create a new configuration first.");
+			} else {
+				execute_configuration(pack_configs[form.get_list_position(packs)], pack_actions(form.get_list_position(actions)), form.is_checked(sounds));
+			}
 		}
-		if(form.is_pressed(new)) {
+
+		// Open pack directly without saved config
+		if(form.is_pressed(open_direct)) {
+			open_pack_direct(form.is_checked(sounds));
+		}
+
+		// Create new configuration
+		if(form.is_pressed(new_config)) {
 			form.reset();
 			create_new_config_dialog();
 			break;
+		}
+
+		// Edit existing configuration
+		if(form.is_pressed(edit_config)) {
+			if(form.get_list_count(packs) < 1) {
+				speak("No configuration to edit");
+			} else {
+				form.reset();
+				edit_config_dialog(pack_configs[form.get_list_position(packs)]);
+				break;
+			}
 		}
 	}
 }

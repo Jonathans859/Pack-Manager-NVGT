@@ -1,43 +1,883 @@
 enum pack_actions {
-	create=0,
-	extract
-}
-void execute_configuration(const string&in name,pack_actions action,bool sounds) {
-	pack_file p;
-	string path=config.get_string(name,"path");
-	string dir=config.get_string(name,"directory");
-	if(action==create) {
-		p.create(path,config.get_string(name,"key"));
-		string[] items;
-		find_stuff(dir,@items);
-		sound @prg;
-		if(sounds) {
-			tone_synth ts;
-			ts.set_waveform_type(2);
-			ts.set_volume(0.5);
-			ts.set_edge_fades(3,15); 
-			ts.freq_ms(300,15);
-			@prg=ts.write_wave_sound();
-		}
-		for(uint i=0; i<items.length(); i++) {
-			p.add_file(items[i],items[i].replace(dir+"/",""));
-			//speak("Added "+items[i].replace(dir+"/",""));
-			if(sounds) prg.play();
-		}
-	}
-	p.close();
-	alert("Done","Done");
+	create = 0,
+	add,
+	extract,
+	extract_selective,
+	stats,
+	delete_files,
+	rename_files,
+	rekey_pack,
+	open_direct
 }
 
-void find_stuff(const string&in path,string[]@items) {
-	string[]@ folders=find_directories(path+"/*");
-	string[]@ files=find_files(path+"/*.*");
-	for (uint i = 0; i < files.length(); i++) {
-		items.insert_last(path+"/"+files[i]);
+enum pack_type {
+	pack_standard = 0,
+	pack_sqlite = 1
+}
+
+// Helper function to create all parent directories for a file path
+void ensure_directory_exists(const string&in file_path) {
+	string[] parts = file_path.replace("\\", "/").split("/");
+	string current_path = "";
+	for(uint i = 0; i < parts.length() - 1; i++) {
+		if(parts[i].length() == 0) continue;
+		if(current_path.length() > 0) current_path += "/";
+		current_path += parts[i];
+		if(!directory_exists(current_path)) {
+			directory_create(current_path);
+		}
+	}
+}
+
+// Create progress sound
+sound@ create_progress_sound() {
+	tone_synth ts;
+	ts.set_waveform_type(2);
+	ts.set_volume(0.5);
+	ts.set_edge_fades(3, 15);
+	ts.freq_ms(300, 15);
+	return ts.write_wave_sound();
+}
+
+// Get pack type from config
+pack_type get_pack_type(const string&in name) {
+	string type_str = config.get_string(name, "type", "standard");
+	if(type_str == "sqlite") return pack_sqlite;
+	return pack_standard;
+}
+
+// Main execution function
+void execute_configuration(const string&in name, pack_actions action, bool sounds) {
+	string path = config.get_string(name, "path");
+	string dir = config.get_string(name, "directory");
+	string key = config.get_string(name, "key");
+	pack_type type = get_pack_type(name);
+	string[] items;
+	sound@ prg;
+	if(sounds) @prg = create_progress_sound();
+
+	// Validation
+	if(action == create || action == add) {
+		if(!directory_exists(dir)) {
+			alert("Error", "The source directory does not exist: " + dir);
+			return;
+		}
+	}
+	if(action != create) {
+		if(!file_exists(path)) {
+			alert("Error", "The pack file does not exist: " + path);
+			return;
+		}
+	}
+
+	// Route to appropriate handler
+	if(type == pack_sqlite) {
+		execute_sqlite_pack(name, path, dir, key, action, sounds, @prg);
+	} else {
+		execute_standard_pack(name, path, dir, key, action, sounds, @prg);
+	}
+}
+
+// Standard pack_file operations
+void execute_standard_pack(const string&in name, const string&in path, const string&in dir, const string&in key, pack_actions action, bool sounds, sound@ prg) {
+	pack_file p;
+	string[] items;
+
+	// Create/repack operation
+	if(action == create) {
+		p.create(path, key);
+		find_stuff(dir, @items);
+		if(items.length() == 0) {
+			alert("Warning", "No files found in the source directory.");
+			p.close();
+			return;
+		}
+		audio_form progress_form;
+		progress_form.create_window("Creating Pack (Standard)", false);
+		int status = progress_form.create_status_bar("status", "Preparing...");
+		int progress = progress_form.create_progress_bar("Progress", 10, true);
+
+		for(uint i = 0; i < items.length(); i++) {
+			string internal_name = items[i].replace(dir + "/", "");
+			progress_form.set_text(status, "Adding: " + internal_name + " (" + (i + 1) + "/" + items.length() + ")");
+			progress_form.set_progress(progress, int((float(i + 1) / float(items.length())) * 100));
+			progress_form.monitor();
+			p.add_file(items[i], internal_name);
+			if(sounds) prg.play();
+		}
+		progress_form.reset();
+		p.close();
+		alert("Done", items.length() + " files have been added to pack.");
+		return;
+	}
+
+	// Add files operation
+	if(action == add) {
+		if(!p.open(path, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		int a = 0;
+		while(a != 3) {
+			a = message_box("Add files", "Select an option", {"Add file", "Add folder", "Continue"}, MESSAGE_BOX_BUTTONS_LEFT_TO_RIGHT);
+			if(a == 1) {
+				string selected_file = open_file_dialog(default_location: dir);
+				if(selected_file.length() > 0) items.insert_last(selected_file);
+			}
+			else if(a == 2) {
+				string folder = select_folder_dialog();
+				if(folder.length() > 0) find_stuff(folder, @items);
+			}
+		}
+		if(items.length() > 0) {
+			for(uint i = 0; i < items.length(); i++) {
+				p.add_file(items[i], items[i].replace(dir + "/", "").replace("\\", "/"));
+				if(sounds) prg.play();
+			}
+			alert("Done", items.length() + " files have been added to pack.");
+		}
+		p.close();
+		return;
+	}
+
+	// Stats view
+	if(action == stats) {
+		if(!p.open(path, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		show_pack_stats_standard(p, name, path);
+		p.close();
+		return;
+	}
+
+	// Extract all files
+	if(action == extract) {
+		if(!p.open(path, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		string extract_dir = select_folder_dialog(dir);
+		if(extract_dir.length() == 0) {
+			p.close();
+			return;
+		}
+		extract_dir = extract_dir.replace("\\", "/");
+
+		items = p.list_files();
+		if(items.length() == 0) {
+			alert("Info", "The pack file is empty.");
+			p.close();
+			return;
+		}
+
+		audio_form progress_form;
+		progress_form.create_window("Extracting Pack", false);
+		int status = progress_form.create_status_bar("status", "Preparing...");
+		int progress = progress_form.create_progress_bar("Progress", 10, true);
+
+		for(uint i = 0; i < items.length(); i++) {
+			string dest_path = extract_dir + "/" + items[i];
+			progress_form.set_text(status, "Extracting: " + items[i] + " (" + (i + 1) + "/" + items.length() + ")");
+			progress_form.set_progress(progress, int((float(i + 1) / float(items.length())) * 100));
+			progress_form.monitor();
+			ensure_directory_exists(dest_path);
+			p.extract_file(items[i], dest_path);
+			if(sounds) prg.play();
+		}
+		progress_form.reset();
+		p.close();
+		alert("Done", items.length() + " files have been extracted.");
+		return;
+	}
+
+	// Selective extraction
+	if(action == extract_selective) {
+		if(!p.open(path, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		items = p.list_files();
+		if(items.length() == 0) {
+			alert("Info", "The pack file is empty.");
+			p.close();
+			return;
+		}
+
+		string[] selected = show_file_selector("Select files to extract", items, true);
+		if(selected.length() == 0) {
+			p.close();
+			return;
+		}
+
+		string extract_dir = select_folder_dialog(dir);
+		if(extract_dir.length() == 0) {
+			p.close();
+			return;
+		}
+		extract_dir = extract_dir.replace("\\", "/");
+
+		audio_form progress_form;
+		progress_form.create_window("Extracting Files", false);
+		int status = progress_form.create_status_bar("status", "Preparing...");
+		int progress = progress_form.create_progress_bar("Progress", 10, true);
+
+		for(uint i = 0; i < selected.length(); i++) {
+			string dest_path = extract_dir + "/" + selected[i];
+			progress_form.set_text(status, "Extracting: " + selected[i] + " (" + (i + 1) + "/" + selected.length() + ")");
+			progress_form.set_progress(progress, int((float(i + 1) / float(selected.length())) * 100));
+			progress_form.monitor();
+			ensure_directory_exists(dest_path);
+			p.extract_file(selected[i], dest_path);
+			if(sounds) prg.play();
+		}
+		progress_form.reset();
+		p.close();
+		alert("Done", selected.length() + " files have been extracted.");
+		return;
+	}
+
+	// Features not available for standard packs
+	if(action == delete_files || action == rename_files || action == rekey_pack) {
+		alert("Not Available", "This feature requires SQLite pack format.\n\nStandard pack files are read-only after creation.");
+		return;
+	}
+}
+
+// SQLite pack operations
+void execute_sqlite_pack(const string&in name, const string&in path, const string&in dir, const string&in key, pack_actions action, bool sounds, sound@ prg) {
+	sqlite_pack p;
+	string[] items;
+
+	// Create/repack operation
+	if(action == create) {
+		if(!p.create(path, key)) {
+			alert("Error", "Failed to create SQLite pack file.");
+			return;
+		}
+		find_stuff(dir, @items);
+		if(items.length() == 0) {
+			alert("Warning", "No files found in the source directory.");
+			p.close();
+			return;
+		}
+		audio_form progress_form;
+		progress_form.create_window("Creating Pack (SQLite)", false);
+		int status = progress_form.create_status_bar("status", "Preparing...");
+		int progress = progress_form.create_progress_bar("Progress", 10, true);
+
+		for(uint i = 0; i < items.length(); i++) {
+			string internal_name = items[i].replace(dir + "/", "");
+			progress_form.set_text(status, "Adding: " + internal_name + " (" + (i + 1) + "/" + items.length() + ")");
+			progress_form.set_progress(progress, int((float(i + 1) / float(items.length())) * 100));
+			progress_form.monitor();
+			p.add_file(items[i], internal_name);
+			if(sounds) prg.play();
+		}
+		progress_form.reset();
+		p.close();
+		alert("Done", items.length() + " files have been added to pack.");
+		return;
+	}
+
+	// Add files operation
+	if(action == add) {
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_WRITE, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		int a = 0;
+		while(a != 3) {
+			a = message_box("Add files", "Select an option", {"Add file", "Add folder", "Continue"}, MESSAGE_BOX_BUTTONS_LEFT_TO_RIGHT);
+			if(a == 1) {
+				string selected_file = open_file_dialog(default_location: dir);
+				if(selected_file.length() > 0) items.insert_last(selected_file);
+			}
+			else if(a == 2) {
+				string folder = select_folder_dialog();
+				if(folder.length() > 0) find_stuff(folder, @items);
+			}
+		}
+		if(items.length() > 0) {
+			for(uint i = 0; i < items.length(); i++) {
+				p.add_file(items[i], items[i].replace(dir + "/", "").replace("\\", "/"), true);
+				if(sounds) prg.play();
+			}
+			alert("Done", items.length() + " files have been added to pack.");
+		}
+		p.close();
+		return;
+	}
+
+	// Stats view
+	if(action == stats) {
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_WRITE, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		show_pack_stats_sqlite(p, name, path, key);
+		p.close();
+		return;
+	}
+
+	// Extract all files
+	if(action == extract) {
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_ONLY, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		string extract_dir = select_folder_dialog(dir);
+		if(extract_dir.length() == 0) {
+			p.close();
+			return;
+		}
+		extract_dir = extract_dir.replace("\\", "/");
+
+		items = p.list_files();
+		if(items.length() == 0) {
+			alert("Info", "The pack file is empty.");
+			p.close();
+			return;
+		}
+
+		audio_form progress_form;
+		progress_form.create_window("Extracting Pack", false);
+		int status = progress_form.create_status_bar("status", "Preparing...");
+		int progress = progress_form.create_progress_bar("Progress", 10, true);
+
+		for(uint i = 0; i < items.length(); i++) {
+			string dest_path = extract_dir + "/" + items[i];
+			progress_form.set_text(status, "Extracting: " + items[i] + " (" + (i + 1) + "/" + items.length() + ")");
+			progress_form.set_progress(progress, int((float(i + 1) / float(items.length())) * 100));
+			progress_form.monitor();
+			ensure_directory_exists(dest_path);
+			p.extract_file(items[i], dest_path);
+			if(sounds) prg.play();
+		}
+		progress_form.reset();
+		p.close();
+		alert("Done", items.length() + " files have been extracted.");
+		return;
+	}
+
+	// Selective extraction
+	if(action == extract_selective) {
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_ONLY, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		items = p.list_files();
+		if(items.length() == 0) {
+			alert("Info", "The pack file is empty.");
+			p.close();
+			return;
+		}
+
+		string[] selected = show_file_selector("Select files to extract", items, true);
+		if(selected.length() == 0) {
+			p.close();
+			return;
+		}
+
+		string extract_dir = select_folder_dialog(dir);
+		if(extract_dir.length() == 0) {
+			p.close();
+			return;
+		}
+		extract_dir = extract_dir.replace("\\", "/");
+
+		audio_form progress_form;
+		progress_form.create_window("Extracting Files", false);
+		int status = progress_form.create_status_bar("status", "Preparing...");
+		int progress = progress_form.create_progress_bar("Progress", 10, true);
+
+		for(uint i = 0; i < selected.length(); i++) {
+			string dest_path = extract_dir + "/" + selected[i];
+			progress_form.set_text(status, "Extracting: " + selected[i] + " (" + (i + 1) + "/" + selected.length() + ")");
+			progress_form.set_progress(progress, int((float(i + 1) / float(selected.length())) * 100));
+			progress_form.monitor();
+			ensure_directory_exists(dest_path);
+			p.extract_file(selected[i], dest_path);
+			if(sounds) prg.play();
+		}
+		progress_form.reset();
+		p.close();
+		alert("Done", selected.length() + " files have been extracted.");
+		return;
+	}
+
+	// Delete files from pack
+	if(action == delete_files) {
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_WRITE, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		items = p.list_files();
+		if(items.length() == 0) {
+			alert("Info", "The pack file is empty.");
+			p.close();
+			return;
+		}
+
+		string[] selected = show_file_selector("Select files to DELETE", items, true);
+		if(selected.length() == 0) {
+			p.close();
+			return;
+		}
+
+		int confirm = message_box("Confirm Delete", "Delete " + selected.length() + " file(s) from pack?\n\nThis cannot be undone!", {"Yes, delete", "Cancel"});
+		if(confirm != 1) {
+			p.close();
+			return;
+		}
+
+		uint deleted = 0;
+		for(uint i = 0; i < selected.length(); i++) {
+			if(p.delete_file(selected[i])) {
+				deleted++;
+				if(sounds) prg.play();
+			}
+		}
+		p.close();
+		alert("Done", deleted + " files have been deleted from pack.");
+		return;
+	}
+
+	// Rename files
+	if(action == rename_files) {
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_WRITE, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+		items = p.list_files();
+		if(items.length() == 0) {
+			alert("Info", "The pack file is empty.");
+			p.close();
+			return;
+		}
+
+		show_rename_dialog(p, items);
+		p.close();
+		return;
+	}
+
+	// Rekey pack
+	if(action == rekey_pack) {
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_WRITE, key)) {
+			alert("Error", "Failed to open pack file. Check the encryption key.");
+			return;
+		}
+
+		audio_form rekey_form;
+		rekey_form.create_window("Change Encryption Key", false);
+		int new_key_input = rekey_form.create_input_box("New encryption &key");
+		int generate_btn = rekey_form.create_button("&Generate random key");
+		int ok_btn = rekey_form.create_button("&Change key", true);
+		int cancel_btn = rekey_form.create_button("&Cancel", false, true);
+		rekey_form.focus(new_key_input);
+
+		while(true) {
+			rekey_form.monitor();
+			wait(5);
+			if(rekey_form.is_pressed(cancel_btn)) {
+				rekey_form.reset();
+				p.close();
+				return;
+			}
+			if(rekey_form.is_pressed(generate_btn)) {
+				string new_key = generate_token(20, TOKEN_CHARACTERS | TOKEN_NUMBERS | TOKEN_SYMBOLS);
+				rekey_form.set_text(new_key_input, new_key);
+				speak("Generated key: " + new_key);
+			}
+			if(rekey_form.is_pressed(ok_btn)) {
+				string new_key = rekey_form.get_text(new_key_input);
+				rekey_form.reset();
+
+				if(p.rekey(new_key)) {
+					// Update config with new key
+					config.set_string(name, "key", new_key);
+					config.save("packs.config");
+					alert("Success", "Encryption key has been changed.\n\nNew key: " + new_key);
+				} else {
+					alert("Error", "Failed to change encryption key.");
+				}
+				p.close();
+				return;
+			}
+		}
+	}
+}
+
+// Rename dialog for sqlite packs
+void show_rename_dialog(sqlite_pack@ p, string[]@ files) {
+	audio_form rename_form;
+	rename_form.create_window("Rename Files", false);
+	int file_list = rename_form.create_list("&Files");
+	for(uint i = 0; i < files.length(); i++) {
+		rename_form.add_list_item(file_list, files[i]);
+	}
+	int rename_btn = rename_form.create_button("&Rename selected");
+	int close_btn = rename_form.create_button("&Close", false, true);
+	rename_form.focus(file_list);
+
+	while(true) {
+		rename_form.monitor();
+		wait(5);
+		if(rename_form.is_pressed(close_btn)) {
+			rename_form.reset();
+			return;
+		}
+		if(rename_form.is_pressed(rename_btn)) {
+			if(files.length() == 0) {
+				speak("No files in pack");
+				continue;
+			}
+			int pos = rename_form.get_list_position(file_list);
+			string old_name = files[pos];
+
+			// Show input for new name
+			audio_form input_form;
+			input_form.create_window("Rename: " + old_name, false);
+			int new_name_input = input_form.create_input_box("New &name", old_name);
+			int ok_btn = input_form.create_button("&Rename", true);
+			int cancel_btn = input_form.create_button("&Cancel", false, true);
+			input_form.focus(new_name_input);
+
+			while(true) {
+				input_form.monitor();
+				wait(5);
+				if(input_form.is_pressed(cancel_btn)) {
+					input_form.reset();
+					break;
+				}
+				if(input_form.is_pressed(ok_btn)) {
+					string new_name = input_form.get_text(new_name_input);
+					input_form.reset();
+					if(new_name.length() > 0 && new_name != old_name) {
+						if(p.rename_file(old_name, new_name)) {
+							files[pos] = new_name;
+							rename_form.edit_list_item(file_list, new_name, pos);
+							speak("Renamed to " + new_name);
+						} else {
+							alert("Error", "Failed to rename file.");
+						}
+					}
+					break;
+				}
+			}
+		}
+	}
+}
+
+// Open a pack directly without saved configuration
+void open_pack_direct(bool sounds) {
+	string path = open_file_dialog("*");
+	if(path.length() == 0) return;
+	path = path.replace("\\", "/");
+
+	// Ask for pack type and key
+	audio_form open_form;
+	open_form.create_window("Open Pack", false);
+	int type_list = open_form.create_list("Pack &type");
+	open_form.add_list_item(type_list, "Standard (pack_file)");
+	open_form.add_list_item(type_list, "SQLite (sqlite_pack)");
+	int key_input = open_form.create_input_box("Encryption &key (leave empty for unencrypted)");
+	int ok_btn = open_form.create_button("&Open", true);
+	int cancel_btn = open_form.create_button("&Cancel", false, true);
+	open_form.focus(type_list);
+
+	pack_type type = pack_standard;
+	string key = "";
+
+	while(true) {
+		open_form.monitor();
+		wait(5);
+		if(open_form.is_pressed(cancel_btn)) {
+			open_form.reset();
+			return;
+		}
+		if(open_form.is_pressed(ok_btn)) {
+			type = pack_type(open_form.get_list_position(type_list));
+			key = open_form.get_text(key_input);
+			open_form.reset();
+			break;
+		}
+	}
+
+	if(type == pack_sqlite) {
+		sqlite_pack p;
+		if(!p.open(path, SQLITE_PACK_OPEN_MODE_READ_WRITE, key)) {
+			alert("Error", "Failed to open SQLite pack. The key may be incorrect or the file is corrupted.");
+			return;
+		}
+		show_pack_stats_sqlite(p, "Direct Open", path, key);
+		p.close();
+	} else {
+		pack_file p;
+		if(!p.open(path, key)) {
+			alert("Error", "Failed to open pack file. The key may be incorrect or the file is corrupted.");
+			return;
+		}
+		show_pack_stats_standard(p, "Direct Open", path);
+		p.close();
+	}
+}
+
+// Show pack statistics for standard pack
+void show_pack_stats_standard(pack_file@ p, const string&in name, const string&in path) {
+	string[] files = p.list_files();
+	uint64 total_size = 0;
+	for(uint i = 0; i < files.length(); i++) {
+		total_size += p.get_file_size(files[i]);
+	}
+
+	audio_form stats_form;
+	stats_form.create_window("Pack Statistics: " + name + " (Standard)", false);
+
+	int info = stats_form.create_status_bar("info", "Files: " + files.length() + " | Total size: " + size_to_string(total_size, 2));
+	int file_list = stats_form.create_list("&Files in pack (" + files.length() + " files)");
+	for(uint i = 0; i < files.length(); i++) {
+		string size_str = size_to_string(p.get_file_size(files[i]), 2);
+		stats_form.add_list_item(file_list, files[i] + " (" + size_str + ")");
+	}
+
+	int extract_btn = stats_form.create_button("&Extract selected");
+	int extract_all_btn = stats_form.create_button("Extract &all");
+	int close_btn = stats_form.create_button("&Close", false, true);
+	stats_form.focus(file_list);
+
+	while(true) {
+		stats_form.monitor();
+		wait(5);
+		if(stats_form.is_pressed(close_btn)) {
+			stats_form.reset();
+			return;
+		}
+		if(stats_form.is_pressed(extract_btn)) {
+			if(files.length() == 0) {
+				speak("No files in pack");
+				continue;
+			}
+			int pos = stats_form.get_list_position(file_list);
+			string extract_dir = select_folder_dialog();
+			if(extract_dir.length() > 0) {
+				extract_dir = extract_dir.replace("\\", "/");
+				string dest_path = extract_dir + "/" + files[pos];
+				ensure_directory_exists(dest_path);
+				if(p.extract_file(files[pos], dest_path)) {
+					alert("Success", "Extracted: " + files[pos]);
+				} else {
+					alert("Error", "Failed to extract file.");
+				}
+			}
+		}
+		if(stats_form.is_pressed(extract_all_btn)) {
+			if(files.length() == 0) {
+				speak("No files in pack");
+				continue;
+			}
+			string extract_dir = select_folder_dialog();
+			if(extract_dir.length() > 0) {
+				extract_dir = extract_dir.replace("\\", "/");
+				for(uint i = 0; i < files.length(); i++) {
+					string dest_path = extract_dir + "/" + files[i];
+					ensure_directory_exists(dest_path);
+					p.extract_file(files[i], dest_path);
+				}
+				alert("Success", "Extracted " + files.length() + " files.");
+			}
+		}
+	}
+}
+
+// Show pack statistics for sqlite pack with additional features
+void show_pack_stats_sqlite(sqlite_pack@ p, const string&in name, const string&in path, const string&in key) {
+	string[] files = p.list_files();
+	uint64 total_size = 0;
+	for(uint i = 0; i < files.length(); i++) {
+		total_size += p.get_file_size(files[i]);
+	}
+
+	audio_form stats_form;
+	stats_form.create_window("Pack Statistics: " + name + " (SQLite)", false);
+
+	int info = stats_form.create_status_bar("info", "Files: " + files.length() + " | Total size: " + size_to_string(total_size, 2));
+	int file_list = stats_form.create_list("&Files in pack (" + files.length() + " files)");
+	for(uint i = 0; i < files.length(); i++) {
+		string size_str = size_to_string(p.get_file_size(files[i]), 2);
+		stats_form.add_list_item(file_list, files[i] + " (" + size_str + ")");
+	}
+
+	int extract_btn = stats_form.create_button("&Extract selected");
+	int extract_all_btn = stats_form.create_button("Extract &all");
+	int delete_btn = stats_form.create_button("&Delete selected");
+	int rename_btn = stats_form.create_button("Re&name selected");
+	int close_btn = stats_form.create_button("&Close", false, true);
+	stats_form.focus(file_list);
+
+	while(true) {
+		stats_form.monitor();
+		wait(5);
+		if(stats_form.is_pressed(close_btn)) {
+			stats_form.reset();
+			return;
+		}
+		if(stats_form.is_pressed(extract_btn)) {
+			if(files.length() == 0) {
+				speak("No files in pack");
+				continue;
+			}
+			int pos = stats_form.get_list_position(file_list);
+			string extract_dir = select_folder_dialog();
+			if(extract_dir.length() > 0) {
+				extract_dir = extract_dir.replace("\\", "/");
+				string dest_path = extract_dir + "/" + files[pos];
+				ensure_directory_exists(dest_path);
+				if(p.extract_file(files[pos], dest_path)) {
+					alert("Success", "Extracted: " + files[pos]);
+				} else {
+					alert("Error", "Failed to extract file.");
+				}
+			}
+		}
+		if(stats_form.is_pressed(extract_all_btn)) {
+			if(files.length() == 0) {
+				speak("No files in pack");
+				continue;
+			}
+			string extract_dir = select_folder_dialog();
+			if(extract_dir.length() > 0) {
+				extract_dir = extract_dir.replace("\\", "/");
+				for(uint i = 0; i < files.length(); i++) {
+					string dest_path = extract_dir + "/" + files[i];
+					ensure_directory_exists(dest_path);
+					p.extract_file(files[i], dest_path);
+				}
+				alert("Success", "Extracted " + files.length() + " files.");
+			}
+		}
+		if(stats_form.is_pressed(delete_btn)) {
+			if(files.length() == 0) {
+				speak("No files in pack");
+				continue;
+			}
+			int pos = stats_form.get_list_position(file_list);
+			int confirm = message_box("Confirm Delete", "Delete '" + files[pos] + "' from pack?", {"Yes", "No"});
+			if(confirm == 1) {
+				if(p.delete_file(files[pos])) {
+					stats_form.delete_list_item(file_list, pos);
+					files.remove_at(pos);
+					// Update totals
+					total_size = 0;
+					for(uint i = 0; i < files.length(); i++) {
+						total_size += p.get_file_size(files[i]);
+					}
+					stats_form.set_text(info, "Files: " + files.length() + " | Total size: " + size_to_string(total_size, 2));
+					speak("File deleted");
+				} else {
+					alert("Error", "Failed to delete file.");
+				}
+			}
+		}
+		if(stats_form.is_pressed(rename_btn)) {
+			if(files.length() == 0) {
+				speak("No files in pack");
+				continue;
+			}
+			int pos = stats_form.get_list_position(file_list);
+			string old_name = files[pos];
+
+			audio_form input_form;
+			input_form.create_window("Rename: " + old_name, false);
+			int new_name_input = input_form.create_input_box("New &name", old_name);
+			int ok_btn = input_form.create_button("&Rename", true);
+			int cancel_btn = input_form.create_button("&Cancel", false, true);
+			input_form.focus(new_name_input);
+
+			while(true) {
+				input_form.monitor();
+				wait(5);
+				if(input_form.is_pressed(cancel_btn)) {
+					input_form.reset();
+					break;
+				}
+				if(input_form.is_pressed(ok_btn)) {
+					string new_name = input_form.get_text(new_name_input);
+					input_form.reset();
+					if(new_name.length() > 0 && new_name != old_name) {
+						if(p.rename_file(old_name, new_name)) {
+							files[pos] = new_name;
+							string size_str = size_to_string(p.get_file_size(new_name), 2);
+							stats_form.edit_list_item(file_list, new_name + " (" + size_str + ")", pos);
+							speak("Renamed to " + new_name);
+						} else {
+							alert("Error", "Failed to rename file.");
+						}
+					}
+					break;
+				}
+			}
+		}
+	}
+}
+
+// File selector dialog
+string[] show_file_selector(const string&in title, string[]@ files, bool multiselect) {
+	string[] selected;
+
+	audio_form selector_form;
+	selector_form.create_window(title, false);
+	int file_list = selector_form.create_list("&Files", 0, multiselect);
+	for(uint i = 0; i < files.length(); i++) {
+		selector_form.add_list_item(file_list, files[i]);
+	}
+	int select_btn = selector_form.create_button("&Select", true);
+	int select_all_btn = selector_form.create_button("Select &all");
+	int cancel_btn = selector_form.create_button("&Cancel", false, true);
+	selector_form.focus(file_list);
+
+	while(true) {
+		selector_form.monitor();
+		wait(5);
+		if(selector_form.is_pressed(cancel_btn)) {
+			selector_form.reset();
+			return selected;
+		}
+		if(selector_form.is_pressed(select_all_btn)) {
+			selected = files;
+			selector_form.reset();
+			return selected;
+		}
+		if(selector_form.is_pressed(select_btn)) {
+			if(multiselect) {
+				for(uint i = 0; i < files.length(); i++) {
+					if(selector_form.is_list_item_checked(file_list, i)) {
+						selected.insert_last(files[i]);
+					}
+				}
+				if(selected.length() == 0) {
+					selected.insert_last(files[selector_form.get_list_position(file_list)]);
+				}
+			} else {
+				selected.insert_last(files[selector_form.get_list_position(file_list)]);
+			}
+			selector_form.reset();
+			return selected;
+		}
+	}
+	return selected;
+}
+
+// Recursive directory traversal
+void find_stuff(const string&in path, string[]@ items) {
+	string[]@ folders = find_directories(path + "/*");
+	string[]@ files = find_files(path + "/*.*");
+	for(uint i = 0; i < files.length(); i++) {
+		items.insert_last(path + "/" + files[i]);
 	}
 	if(folders.length() > 0) {
-		for (uint i = 0; i < folders.length(); i++) {
-			find_stuff(path+"/"+folders[i],items);
+		for(uint i = 0; i < folders.length(); i++) {
+			find_stuff(path + "/" + folders[i], items);
 		}
 	}
 }
